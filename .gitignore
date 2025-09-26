@@ -47,3 +47,16 @@ sitemap*.xml
 
 # Turbo
 .turbo
+
+# AI-generated documentation and help files
+*-FIX.md
+*_FIX.md
+*-INTEGRATION.md
+ATTENDANCE-*.md
+INTEGRATION-*.md
+DATE-FNS-*.md
+API-TOKEN-*.md
+README-FRONTEND.md
+
+/.vscode/*
+/.github/*
