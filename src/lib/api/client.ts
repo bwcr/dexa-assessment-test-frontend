@@ -61,6 +61,11 @@ interface AttendanceSummary {
 class ApiClient {
   private baseURL =
     process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+  private isRefreshing = false;
+  private failedQueue: Array<{
+    resolve: () => void;
+    reject: (reason?: Error) => void;
+  }> = [];
 
   private getToken(): string | null {
     if (typeof window === 'undefined') {
@@ -69,12 +74,111 @@ class ApiClient {
     return localStorage.getItem('token');
   }
 
+  private getRefreshToken(): string | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return localStorage.getItem('refreshToken');
+  }
+
+  private getTokenExpiration(): number | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const expires = localStorage.getItem('tokenExpires');
+    return expires ? Number.parseInt(expires, 10) : null;
+  }
+
+  private isTokenExpired(): boolean {
+    const expiration = this.getTokenExpiration();
+    if (!expiration) {
+      return false;
+    }
+
+    // Check if token expires within the next 5 minutes (300000ms)
+    return Date.now() >= expiration - 300000;
+  }
+
+  private setTokens(
+    token: string,
+    refreshToken: string,
+    tokenExpires: number,
+  ): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    localStorage.setItem('token', token);
+    localStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('tokenExpires', tokenExpires.toString());
+  }
+
+  private clearTokens(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('tokenExpires');
+    localStorage.removeItem('user');
+  }
+
+  private processQueue(error: Error | null): void {
+    this.failedQueue.forEach(({ resolve, reject }) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+
+    this.failedQueue = [];
+  }
+
+  private async handleResponseData(response: Response) {
+    const contentType = response.headers.get('content-type');
+
+    if (contentType?.includes('application/json')) {
+      return response.json();
+    }
+
+    return response.text();
+  }
+
+  private async handleUnauthorizedResponse<T>(
+    endpoint: string,
+    options: RequestInit,
+  ): Promise<ApiResponse<T>> {
+    try {
+      await this.handleTokenRefresh();
+      // Retry the original request with new token
+      return this.request<T>(endpoint, options, true);
+    } catch {
+      // If refresh fails, clear tokens and return 401
+      this.clearTokens();
+      return {
+        status: 401,
+        error: 'Authentication failed. Please log in again.',
+      };
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
+    isRetry = false,
   ): Promise<ApiResponse<T>> {
-    const token = this.getToken();
+    // Check if token is expired and refresh proactively
+    if (!isRetry && this.isTokenExpired() && endpoint !== '/auth/refresh') {
+      try {
+        await this.handleTokenRefresh();
+      } catch {
+        // Ignore proactive refresh failures, let the request proceed
+      }
+    }
 
+    const token = this.getToken();
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
@@ -86,15 +190,11 @@ class ApiClient {
 
     try {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
+      const data = await this.handleResponseData(response);
 
-      // biome-ignore lint/suspicious/noImplicitAnyLet: acceptable here
-      let data;
-      const contentType = response.headers.get('content-type');
-
-      if (contentType?.includes('application/json')) {
-        data = await response.json();
-      } else {
-        data = await response.text();
+      // Handle 401 errors with automatic token refresh and retry
+      if (response.status === 401 && !isRetry && endpoint !== '/auth/refresh') {
+        return this.handleUnauthorizedResponse<T>(endpoint, options);
       }
 
       if (!response.ok) {
@@ -104,15 +204,62 @@ class ApiClient {
         };
       }
 
-      return {
-        data,
-        status: response.status,
-      };
+      return { data, status: response.status };
     } catch (error) {
       return {
         status: 500,
         error: error instanceof Error ? error.message : 'Network error',
       };
+    }
+  }
+
+  private async handleTokenRefresh(): Promise<void> {
+    const refreshToken = this.getRefreshToken();
+
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    if (this.isRefreshing) {
+      // If already refreshing, wait for the current refresh to complete
+      return new Promise<void>((resolve, reject) => {
+        this.failedQueue.push({
+          resolve: () => resolve(),
+          reject,
+        });
+      });
+    }
+
+    this.isRefreshing = true;
+
+    try {
+      const response = await fetch(`${this.baseURL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${refreshToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Refresh failed with status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.token && data.refreshToken && data.tokenExpires) {
+        this.setTokens(data.token, data.refreshToken, data.tokenExpires);
+        this.processQueue(null);
+      } else {
+        throw new Error('Invalid refresh response format');
+      }
+    } catch (error) {
+      const refreshError =
+        error instanceof Error ? error : new Error('Unknown refresh error');
+      this.processQueue(refreshError);
+      throw refreshError;
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
@@ -133,11 +280,7 @@ class ApiClient {
     });
 
     // Clear local storage regardless of response
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-    }
+    this.clearTokens();
 
     return result;
   }
@@ -145,25 +288,28 @@ class ApiClient {
   async refreshToken(): Promise<
     ApiResponse<{ token: string; refreshToken: string; tokenExpires: number }>
   > {
-    const refreshToken =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('refreshToken')
-        : null;
+    try {
+      await this.handleTokenRefresh();
 
-    if (!refreshToken) {
-      return { status: 401, error: 'No refresh token available' };
+      // Return the stored tokens after successful refresh
+      const token = this.getToken();
+      const refreshToken = this.getRefreshToken();
+      const tokenExpires = this.getTokenExpiration();
+
+      if (token && refreshToken && tokenExpires) {
+        return {
+          status: 200,
+          data: { token, refreshToken, tokenExpires },
+        };
+      }
+
+      return { status: 401, error: 'Failed to refresh tokens' };
+    } catch (error) {
+      return {
+        status: 401,
+        error: error instanceof Error ? error.message : 'Token refresh failed',
+      };
     }
-
-    return this.request<{
-      token: string;
-      refreshToken: string;
-      tokenExpires: number;
-    }>('/auth/refresh', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${refreshToken}`,
-      },
-    });
   }
 
   async getMe(): Promise<ApiResponse<User>> {

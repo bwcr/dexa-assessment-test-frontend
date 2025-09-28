@@ -36,11 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: response.error || 'Login failed' };
       }
 
-      const { token, refreshToken, user: userData } = response.data;
+      const {
+        token,
+        refreshToken,
+        tokenExpires,
+        user: userData,
+      } = response.data;
 
-      // Store tokens and user data
+      // Store tokens and user data (tokens are now handled by API client)
       localStorage.setItem('token', token);
       localStorage.setItem('refreshToken', refreshToken);
+      localStorage.setItem('tokenExpires', tokenExpires.toString());
       localStorage.setItem('user', JSON.stringify(userData));
 
       setUser(userData);
@@ -59,14 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       await apiClient.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
     } finally {
-      // Clear state regardless of API response
+      // Clear state (API client handles token cleanup)
       setUser(null);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
       setLoading(false);
     }
   };
@@ -85,62 +86,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state on mount
   useEffect(() => {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: acceptable for now
+    const validateStoredAuth = async (storedUser: string) => {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+
+        // Verify token is still valid by fetching fresh user data
+        // The API client will automatically handle token refresh if needed
+        const response = await apiClient.getMe();
+        if (response.data && !response.error) {
+          setUser(response.data);
+          localStorage.setItem('user', JSON.stringify(response.data));
+        } else if (response.status === 401) {
+          // Authentication failed, clear auth state
+          setUser(null);
+          localStorage.clear();
+        }
+      } catch {
+        // Parse or API error, clear auth state
+        setUser(null);
+        localStorage.clear();
+      }
+    };
+
     const initAuth = async () => {
       try {
         const storedToken = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
 
         if (storedToken && storedUser) {
-          try {
-            const parsedUser = JSON.parse(storedUser);
-            setUser(parsedUser);
-
-            // Verify token is still valid by fetching fresh user data
-            const response = await apiClient.getMe();
-            if (response.data && !response.error) {
-              setUser(response.data);
-              localStorage.setItem('user', JSON.stringify(response.data));
-            } else if (response.status === 401) {
-              // Token expired, try to refresh
-              const refreshResponse = await apiClient.refreshToken();
-              if (refreshResponse.data && !refreshResponse.error) {
-                localStorage.setItem('token', refreshResponse.data.token);
-                localStorage.setItem(
-                  'refreshToken',
-                  refreshResponse.data.refreshToken,
-                );
-                localStorage.setItem(
-                  'tokenExpires',
-                  refreshResponse.data.tokenExpires.toString(),
-                );
-                // Try getting user data again
-                const userResponse = await apiClient.getMe();
-                if (userResponse.data && !userResponse.error) {
-                  setUser(userResponse.data);
-                  localStorage.setItem(
-                    'user',
-                    JSON.stringify(userResponse.data),
-                  );
-                } else {
-                  // Refresh failed, clear auth
-                  setUser(null);
-                  localStorage.clear();
-                }
-              } else {
-                // Refresh failed, clear auth
-                setUser(null);
-                localStorage.clear();
-              }
-            }
-          } catch (error) {
-            console.error('Auth initialization error:', error);
-            setUser(null);
-            localStorage.clear();
-          }
+          await validateStoredAuth(storedUser);
         }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
       } finally {
         setLoading(false);
       }
