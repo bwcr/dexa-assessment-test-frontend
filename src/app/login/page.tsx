@@ -76,7 +76,7 @@ export default function LoginPage() {
         <Card.Root width="100%" maxWidth="400px" margin="0 auto">
           <Card.Header textAlign="center">
             <Heading size="lg" color="blue.600">
-              Employee Login
+              Admin Login
             </Heading>
             <Text color="gray.600" mt={2}>
               Sign in to your company account

@@ -21,7 +21,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { FiBarChart, FiClock, FiLogOut, FiMenu, FiUser } from 'react-icons/fi';
+import { FiClock, FiLogOut, FiMenu, FiUser } from 'react-icons/fi';
 
 import { useAuth } from '@/lib/auth/auth-context';
 
@@ -30,9 +30,8 @@ interface NavigationProps {
 }
 
 const menuItems = [
-  { label: 'Profile', icon: FiUser, href: '/dashboard/profile' },
+  { label: 'Users', icon: FiUser, href: '/dashboard/users' },
   { label: 'Absen', icon: FiClock, href: '/dashboard/attendance' },
-  { label: 'Summary', icon: FiBarChart, href: '/dashboard/summary' },
 ];
 
 const NavigationItems = ({
@@ -94,7 +93,7 @@ export function DashboardLayout({ children }: NavigationProps) {
               WFH Attendance
             </Heading>
             <Text fontSize="sm" color="gray.600">
-              Employee Portal
+              Admin Portal
             </Text>
           </Box>
 
@@ -151,7 +150,7 @@ export function DashboardLayout({ children }: NavigationProps) {
                         WFH Attendance
                       </Heading>
                       <Text fontSize="sm" color="gray.600">
-                        Employee Portal
+                        Admin Portal
                       </Text>
                     </DrawerHeader>
                     <DrawerBody>
@@ -206,7 +205,7 @@ export function DashboardLayout({ children }: NavigationProps) {
                           : 'Loading...'}
                       </Text>
                       <Text fontSize="xs" color="gray.600">
-                        {user?.position || 'Employee'}
+                        {user?.position || 'Admin'}
                       </Text>
                     </Box>
                   </HStack>

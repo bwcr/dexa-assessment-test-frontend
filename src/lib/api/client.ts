@@ -17,6 +17,8 @@ interface LoginResponse {
 interface User {
   id: number;
   email: string;
+  provider: string;
+  socialId: string;
   firstName: string;
   lastName: string;
   phone?: string;
@@ -33,6 +35,9 @@ interface User {
     id: number;
     name: string;
   };
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
 }
 
 interface Attendance {
@@ -44,6 +49,7 @@ interface Attendance {
   status: 'in' | 'out' | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
 }
 
 interface AttendanceSummary {
@@ -268,7 +274,7 @@ class ApiClient {
     email: string,
     password: string,
   ): Promise<ApiResponse<LoginResponse>> {
-    return this.request<LoginResponse>('/auth/email/login', {
+    return this.request<LoginResponse>('/auth/admin/email/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
@@ -412,7 +418,9 @@ class ApiClient {
     }
 
     const queryString = params.toString();
-    const endpoint = `/attendances/my-summary${queryString ? `?${queryString}` : ''}`;
+    const endpoint = `/attendances/my-summary${
+      queryString ? `?${queryString}` : ''
+    }`;
 
     return this.request<Array<AttendanceSummary>>(endpoint);
   }
@@ -437,10 +445,81 @@ class ApiClient {
             status: result.data[0].status,
             createdAt: result.data[0].createdAt,
             updatedAt: result.data[0].updatedAt,
+            deletedAt: result.data[0].deletedAt,
           }
         : null,
       status: result.status,
     };
+  }
+
+  async getAttendances(
+    page: number = 1,
+    limit: number = 10,
+    dateFrom?: string,
+    dateTo?: string,
+  ): Promise<ApiResponse<{ data: Array<Attendance>; hasNextPage: boolean }>> {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('limit', limit.toString());
+    if (dateFrom) {
+      params.append('dateFrom', dateFrom);
+    }
+    if (dateTo) {
+      params.append('dateTo', dateTo);
+    }
+
+    return this.request<{ data: Array<Attendance>; hasNextPage: boolean }>(
+      `/attendances?${params.toString()}`,
+    );
+  }
+
+  async createEmployee(data: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    position?: string;
+    photo?: { id: string };
+    role: { id: number };
+    status: { id: number };
+  }): Promise<ApiResponse<User>> {
+    return this.request<User>('/admin/employees', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmployee(
+    id: number,
+    data: {
+      password?: string;
+      firstName: string;
+      lastName: string;
+      phone?: string;
+      position?: string;
+      photo?: { id: string };
+      role: { id: number };
+      status: { id: number };
+    },
+  ): Promise<ApiResponse<User>> {
+    return this.request<User>(`/admin/employees/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getEmployees(
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<ApiResponse<{ data: Array<User>; hasNextPage: boolean }>> {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('limit', limit.toString());
+
+    return this.request<{ data: Array<User>; hasNextPage: boolean }>(
+      `/admin/employees?${params.toString()}`,
+    );
   }
 }
 

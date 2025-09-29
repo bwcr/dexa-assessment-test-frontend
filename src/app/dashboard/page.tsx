@@ -60,7 +60,7 @@ export default function DashboardPage() {
                       Position
                     </Text>
                     <Text fontSize="2xl" fontWeight="bold">
-                      {user?.position || 'Employee'}
+                      {user?.position || 'Admin'}
                     </Text>
                   </Box>
                   <Icon color="green.500" boxSize={8}>
@@ -96,13 +96,13 @@ export default function DashboardPage() {
                   <FiUser />
                 </Icon>
                 <Heading size="md" mb={2}>
-                  Profile Management
+                  User Management
                 </Heading>
                 <Text color="gray.600" mb={4}>
-                  Update your personal information, photo, and contact details
+                  Manage and update user accounts
                 </Text>
                 <Button asChild colorPalette="blue" width="100%">
-                  <Link href="/dashboard/profile">Manage Profile</Link>
+                  <Link href="/dashboard/users">Manage Users</Link>
                 </Button>
               </Card.Body>
             </Card.Root>
@@ -116,27 +116,10 @@ export default function DashboardPage() {
                   Attendance
                 </Heading>
                 <Text color="gray.600" mb={4}>
-                  Check-in and check-out for your work from home sessions
+                  View and manage attendance records
                 </Text>
                 <Button asChild colorPalette="green" width="100%">
                   <Link href="/dashboard/attendance">Manage Attendance</Link>
-                </Button>
-              </Card.Body>
-            </Card.Root>
-
-            <Card.Root>
-              <Card.Body textAlign="center">
-                <Icon color="purple.500" boxSize={12} mx="auto" mb={4}>
-                  <FiCalendar />
-                </Icon>
-                <Heading size="md" mb={2}>
-                  Attendance Summary
-                </Heading>
-                <Text color="gray.600" mb={4}>
-                  View your attendance history and generate reports
-                </Text>
-                <Button asChild colorPalette="purple" width="100%">
-                  <Link href="/dashboard/summary">View Summary</Link>
                 </Button>
               </Card.Body>
             </Card.Root>
